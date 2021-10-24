@@ -21,6 +21,7 @@ contract ERC20POC is ERC20 {
     address user;
     uint256 amount;
     uint256 fee;
+    bool deleted;
   }
   pegin_data[] private arr_pegin_submit;
   
@@ -34,12 +35,12 @@ contract ERC20POC is ERC20 {
   }
   pegout_data[] private arr_pegout_reserve;  
   
-  constructor(uint256 new_fee_rate, uint256 locking_POC, address new_staff, uint256 new_staff_locked_POC) ERC20("PocketArena", "POC") {
+  constructor(uint256 fee_rate, uint256 locking_POC, address new_staff, uint256 new_staff_locked_POC) ERC20("PocketArena", "POC") {
     _owner = msg.sender;
     _mint(_owner, (INIT_SUPPLY_POC * (10 ** uint256(decimals()))));
     _locked_POC_total = locking_POC;
     staff_add(new_staff, new_staff_locked_POC);
-    _fee_rate_set(new_fee_rate);
+    _fee_rate_set(fee_rate);
   }
   
   modifier onlyOwner() {
@@ -203,6 +204,12 @@ contract ERC20POC is ERC20 {
       return _locked_POC_total;
   }
   
+  function locked_POC_total_minus(uint256 amount) onlyOwner public returns (uint256) {
+      require((_locked_POC_total - staff_quota_total()) >= amount, "lockable POC is not enough");
+      _locked_POC_total -= amount;
+      return _locked_POC_total;
+  }
+  
   
   
   function pegin_submit(uint256 amount) public returns (pegin_data memory) {
@@ -210,7 +217,7 @@ contract ERC20POC is ERC20 {
     require(balanceOf(msg.sender) >= (amount + calc_fee), "your balance is not enough");
     transfer(_owner, (amount + calc_fee));
     _locked_POC_total += (amount + calc_fee);
-    pegin_data memory temp = pegin_data(block.timestamp, keccak256(abi.encodePacked(block.timestamp)), msg.sender, amount, calc_fee);
+    pegin_data memory temp = pegin_data(block.timestamp, keccak256(abi.encodePacked(block.timestamp)), msg.sender, amount, calc_fee, false);
     arr_pegin_submit.push(temp);
     return temp;
   }
@@ -219,7 +226,24 @@ contract ERC20POC is ERC20 {
     return arr_pegin_submit;
   }
   
-  function pegin_submit_complete(bytes32[] memory del_id) onlyStaff public returns (bytes32[] memory) {
+  function pegin_submit_complete(bytes32[] memory complete_id) onlyStaff public returns (bytes32[] memory) {
+    uint256 len = complete_id.length;
+    bytes32[] memory arr_temp = new bytes32[](len);
+    uint256 temp_index = 0;
+    for (uint256 i=0; i<len; i++) {
+      for (uint256 j=0; j<arr_pegin_submit.length; j++) {
+        if (arr_pegin_submit[j].id == complete_id[i]) {
+          arr_pegin_submit[j].deleted = true;
+          arr_temp[temp_index] = complete_id[i];
+          temp_index += 1;
+          break;
+        }
+      }
+    }
+    return arr_temp;
+  }
+  
+  function pegin_submit_delete(bytes32[] memory del_id) onlyStaff public returns (bytes32[] memory) {
     uint256 len = del_id.length;
     bytes32[] memory arr_temp = new bytes32[](len);
     uint256 temp_index = 0;
