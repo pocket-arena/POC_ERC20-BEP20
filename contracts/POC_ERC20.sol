@@ -17,25 +17,33 @@ contract ERC20POC is ERC20 {
   }
   bridge_staff[] private arr_staff;
   
+  enum Submit_state {submit, cancel, complete}
   struct pegin_data {
     uint256 reg_date;
     bytes32 id;
     address user;
     uint256 amount;
     uint256 fee;
-    bool deleted;
+    Submit_state state;
   }
-  pegin_data[] private arr_pegin_submit;
+  mapping (bytes32 => pegin_data) private arr_pegin_submit;
+  mapping (uint256 => bytes32) private arr_pegin_submit_key;
+  uint256 arr_pegin_submit_key_start = 1;
+  uint256 arr_pegin_submit_key_last = 0;
   
+  enum Reserve_state {reserve, cancel, complete}
   struct pegout_data {
     uint256 reg_date;
     bytes32 id;
     address user;
     uint256 amount;
 	address staff;
-    bool deleted;
+    Reserve_state state;
   }
-  pegout_data[] private arr_pegout_reserve;  
+  mapping (bytes32 => pegout_data) private arr_pegout_reserve;  
+  mapping (uint256 => bytes32) private arr_pegout_reserve_key;
+  uint256 arr_pegout_reserve_key_start = 1;
+  uint256 arr_pegout_reserve_key_last = 0;
   
   constructor(uint256 fee_rate, uint256 locking_POC, address new_staff, uint256 new_staff_locked_POC,
                 uint256 new_submit_daily_limit_total, uint256 new_submit_daily_limit_personal) ERC20("PocketArena", "POC") {
@@ -113,7 +121,8 @@ contract ERC20POC is ERC20 {
     return true;
   }
      
-  function staff_del() onlyStaff external returns (bool) {
+  event evt_staff_del(bool result);
+  function staff_del() onlyStaff external {
     uint256 del_index = arr_staff.length + 1;
     for (uint256 i=0; i<arr_staff.length; i++) {
       if (arr_staff[i].user == msg.sender) {
@@ -124,14 +133,14 @@ contract ERC20POC is ERC20 {
       }
     }
     if (del_index >= (arr_staff.length + 1)) {
-      return false;
+      emit evt_staff_del(false);
     }
     else {
       for (uint256 i=del_index; i<arr_staff.length-1; i++){
         arr_staff[i] = arr_staff[i+1];
       }
       arr_staff.pop();
-      return true;
+      emit evt_staff_del(true);
     }
   }
    
@@ -148,7 +157,8 @@ contract ERC20POC is ERC20 {
     return (is_staff, quota);
   }
   
-  function staff_quota_add(address staff, uint256 increased) onlyOwner external returns (bool) {
+  event evt_staff_quota_add(bool result);
+  function staff_quota_add(address staff, uint256 increased) onlyOwner external {
     (bool is_staff, ) = staff_check(staff);
     require(is_staff, "you can add quota for existed staff only");
     require(_locked_POC_total - staff_quota_total() > increased, "you can add within your locked_POC");
@@ -159,10 +169,11 @@ contract ERC20POC is ERC20 {
         break;
       }
     }
-    return true;
+    emit evt_staff_quota_add(true);
   }
   
-  function staff_quota_minus(uint256 decreased) onlyStaff external returns (bool) {
+  event evt_staff_quota_minus(bool result);
+  function staff_quota_minus(uint256 decreased) onlyStaff external {
     (, uint256 quota) = staff_check(msg.sender);
     require(quota >= decreased, "you can minus within your locked_POC");
     for (uint256 i=0; i<arr_staff.length; i++) {
@@ -172,7 +183,7 @@ contract ERC20POC is ERC20 {
         break;
       }
     }
-    return true;
+    emit evt_staff_quota_minus(true);
   }
   
   function staff_quota_total() onlyOwner public view returns (uint256) {
@@ -200,40 +211,74 @@ contract ERC20POC is ERC20 {
     return amount * _fee_rate / 10000 / 100;
   }
   
+  
+  
   function locked_POC_total() external view returns (uint256) {
     return _locked_POC_total;
   }
   
-  function locked_POC_total_add(uint256 amount) onlyOwner external returns (uint256) {
-      require((balanceOf(_owner) - _locked_POC_total) >= amount, "lockable POC is not enough");
-      _locked_POC_total += amount;
-      return _locked_POC_total;
+  event evt_locked_POC_total_add(uint256 _locked_POC_total);
+  function locked_POC_total_add(uint256 amount) onlyOwner external {
+    require((balanceOf(_owner) - _locked_POC_total) >= amount, "lockable POC is not enough");
+    _locked_POC_total += amount;
+    emit evt_locked_POC_total_add(_locked_POC_total);
   }
   
-  function locked_POC_total_minus(uint256 amount) onlyOwner external returns (uint256) {
-      require((_locked_POC_total - staff_quota_total()) >= amount, "lockable POC is not enough");
-      _locked_POC_total -= amount;
-      return _locked_POC_total;
+  event evt_locked_POC_total_minus(uint256 _locked_POC_total);
+  function locked_POC_total_minus(uint256 amount) onlyOwner external {
+    require((_locked_POC_total - staff_quota_total()) >= amount, "lockable POC is not enough");
+    _locked_POC_total -= amount;
+    emit evt_locked_POC_total_minus(_locked_POC_total);
   }
+  
+  
    
   function _submit_daily_limit_total_get() onlyOwner external view returns (uint256) {
-      return _submit_daily_limit_total;
+    return _submit_daily_limit_total;
   }
   
   event evt_submit_daily_limit_total_set(uint256 _submit_daily_limit_total);
   function _submit_daily_limit_total_set(uint256 new_submit_daily_limit_total) onlyOwner external {
-      _submit_daily_limit_total = new_submit_daily_limit_total;
-      emit evt_submit_daily_limit_total_set(_submit_daily_limit_total);
+    _submit_daily_limit_total = new_submit_daily_limit_total;
+    emit evt_submit_daily_limit_total_set(_submit_daily_limit_total);
   }
   
   function _submit_daily_limit_personal_get() onlyOwner external view returns (uint256) {
-      return _submit_daily_limit_personal;
+    return _submit_daily_limit_personal;
   }
   
   event evt_submit_daily_limit_personal_set(uint256 _submit_daily_limit_personal);
   function _submit_daily_limit_personal_set(uint256 new_submit_daily_limit_personal) onlyOwner external {
-      _submit_daily_limit_personal = new_submit_daily_limit_personal;
-      emit evt_submit_daily_limit_personal_set(_submit_daily_limit_personal);
+    _submit_daily_limit_personal = new_submit_daily_limit_personal;
+    emit evt_submit_daily_limit_personal_set(_submit_daily_limit_personal);
+  }
+  
+
+  function arr_pegin_submit_key_last_get() onlyOwner external view returns (uint256) {
+    return arr_pegin_submit_key_last;
+  }  
+  
+  function arr_pegin_submit_key_start_get() onlyOwner external view returns (uint256) {
+    return arr_pegin_submit_key_start;
+  }
+  
+  event evt_arr_pegin_submit_key_start_set(uint256 arr_pegin_submit_key_start);
+  function arr_pegin_submit_key_start_set(uint256 new_arr_pegin_submit_key_start) onlyOwner external {
+    arr_pegin_submit_key_start = new_arr_pegin_submit_key_start;
+    emit evt_arr_pegin_submit_key_start_set(arr_pegin_submit_key_start);
+  }
+  
+  function arr_pegout_reserve_key_last_get() onlyOwner external view returns (uint256) {
+    return arr_pegout_reserve_key_last;
+  }
+  
+  function arr_pegout_reserve_key_start_get() onlyOwner external view returns (uint256) {
+    return arr_pegout_reserve_key_start;
+  }
+  event evt_arr_pegout_reserve_key_start_set(uint256 arr_pegout_reserve_ey_start);
+  function arr_pegout_reserve_key_start_set(uint256 new_arr_pegout_reserve_key_start) onlyOwner external {
+    arr_pegout_reserve_key_start = new_arr_pegout_reserve_key_start;
+    emit evt_arr_pegout_reserve_key_start_set(arr_pegout_reserve_key_start);
   }
   
   
@@ -244,14 +289,13 @@ contract ERC20POC is ERC20 {
     require(balanceOf(msg.sender) >= (amount + calc_fee), "your balance is not enough");
     uint256 daily_total = 0;
     uint256 daily_personal = 0;
-    uint256 len = arr_pegin_submit.length;
-    for (uint256 i=(len-1); i>=0; i--) {
-      if ((block.timestamp - arr_pegin_submit[i].reg_date) < 86400) {
+    for (uint256 i=arr_pegin_submit_key_last; i>=arr_pegin_submit_key_start; i--) {
+      if ((block.timestamp - arr_pegin_submit[arr_pegin_submit_key[i]].reg_date) < 86400) {
         daily_total += 1;
-        require(daily_total <= _submit_daily_limit_total, "we dont't get the submit anymore today");
-        if (arr_pegin_submit[i].user == msg.sender) {
+        require(daily_total < _submit_daily_limit_total, "we dont't get the submit anymore today");
+        if (arr_pegin_submit[arr_pegin_submit_key[i]].user == msg.sender) {
           daily_personal += 1;
-          require(daily_personal <= _submit_daily_limit_personal, "you can't submit anymore today");
+          require(daily_personal < _submit_daily_limit_personal, "you can't submit anymore today");
         }
       }
       else {
@@ -260,72 +304,81 @@ contract ERC20POC is ERC20 {
     }
     transfer(_owner, (amount + calc_fee));
     _locked_POC_total += (amount + calc_fee);
-    pegin_data memory temp = pegin_data(block.timestamp, keccak256(abi.encodePacked(block.timestamp)), msg.sender, amount, calc_fee, false);
-    arr_pegin_submit.push(temp);
+    bytes32 temp_key = keccak256(abi.encodePacked(block.timestamp));
+    pegin_data memory temp = pegin_data(block.timestamp, temp_key, msg.sender, amount, calc_fee, Submit_state.submit);
+    arr_pegin_submit[temp_key] = temp;
+    arr_pegin_submit_key_last += 1;
+    arr_pegin_submit_key[arr_pegin_submit_key_last] = temp_key;
     emit evt_pegin_submit(temp);
   }
   
-  function pegin_submit_list() external view returns (pegin_data[] memory) {
-    return arr_pegin_submit;
+  function pegin_submit_list(uint256 count_per_page, uint256 current_page) external view returns (pegin_data[] memory) {
+    uint256 new_arr_pegin_submit_key_last;
+    uint256 new_arr_pegin_submit_key_start;
+    if (current_page == 0) { 
+      current_page = 1;
+    }
+    if (current_page == 1) {
+      new_arr_pegin_submit_key_last = arr_pegin_submit_key_last;
+    }
+    else
+    {
+      uint256 key_position = count_per_page * (current_page - 1);
+      if (arr_pegin_submit_key_last <= key_position) {
+        new_arr_pegin_submit_key_last = 0;
+      }
+      else {
+        new_arr_pegin_submit_key_last = arr_pegin_submit_key_last - key_position;
+      }
+    }
+    if (new_arr_pegin_submit_key_last < count_per_page) {
+      new_arr_pegin_submit_key_start = arr_pegin_submit_key_start;
+    }
+    else {
+      if ( new_arr_pegin_submit_key_last < (arr_pegin_submit_key_start + count_per_page) ) {
+        new_arr_pegin_submit_key_start = arr_pegin_submit_key_start;
+      }
+      else {
+        new_arr_pegin_submit_key_start = new_arr_pegin_submit_key_last - count_per_page + 1;
+      }
+    }
+    uint256 temp_size = 0;
+    if (new_arr_pegin_submit_key_start < (new_arr_pegin_submit_key_last + 1) ) {
+      temp_size = new_arr_pegin_submit_key_last - new_arr_pegin_submit_key_start + 1;
+    }
+    pegin_data[] memory arr_temp = new pegin_data[](temp_size);
+    uint256 index = 0;
+    for (uint256 i=new_arr_pegin_submit_key_last; i>=new_arr_pegin_submit_key_start; i--) {
+      arr_temp[index] = arr_pegin_submit[arr_pegin_submit_key[i]];
+      index += 1;
+    }
+    return arr_temp;
   }
   
-  event evt_pegin_submit_complete(bytes32[] arr_temp);
+  event evt_pegin_submit_complete(bool result);
   function pegin_submit_complete(bytes32[] memory complete_id) onlyStaff external {
     uint256 len = complete_id.length;
-    bytes32[] memory arr_temp = new bytes32[](len);
-    uint256 temp_index = 0;
     for (uint256 i=0; i<len; i++) {
-      for (uint256 j=0; j<arr_pegin_submit.length; j++) {
-        if (arr_pegin_submit[j].id == complete_id[i]) {
-          arr_pegin_submit[j].deleted = true;
-          arr_temp[temp_index] = complete_id[i];
-          temp_index += 1;
-          break;
-        }
+      if (arr_pegin_submit[complete_id[i]].reg_date > 0) {
+        arr_pegin_submit[complete_id[i]].state = Submit_state.complete;
       }
     }
-    emit evt_pegin_submit_complete(arr_temp);
-  }
-  
-  event evt_pegin_submit_delete(bytes32[] arr_temp);
-  function pegin_submit_delete(bytes32[] memory del_id) onlyStaff external {
-    uint256 len = del_id.length;
-    bytes32[] memory arr_temp = new bytes32[](len);
-    uint256 temp_index = 0;
-    for (uint256 i=0; i<len; i++) {
-      for (uint256 j=0; j<arr_pegin_submit.length; j++) {
-        if (arr_pegin_submit[j].id == del_id[i]) {
-          remove_arr_pegin_submit(j);
-          arr_temp[temp_index] = del_id[i];
-          temp_index += 1;
-          break;
-        }
-      }
-    }
-    emit evt_pegin_submit_delete(arr_temp);
+    emit evt_pegin_submit_complete(true);
   }
   
   event evt_pegin_submit_cancel(bool result);
-  function pegin_submit_cancel(bytes32 del_id) onlyOwner external {
-    for (uint256 j=0; j<arr_pegin_submit.length; j++) {
-      if (arr_pegin_submit[j].id == del_id) {
-        transfer(arr_pegin_submit[j].user, (arr_pegin_submit[j].amount + arr_pegin_submit[j].fee));
-        _locked_POC_total -= (arr_pegin_submit[j].amount + arr_pegin_submit[j].fee);
-        remove_arr_pegin_submit(j);
-        emit evt_pegin_submit_cancel(true);
-        break;
+  function pegin_submit_cancel(bytes32[] memory del_id) onlyStaff external {
+    uint256 len = del_id.length;
+    for (uint256 i=0; i<len; i++) {
+      if (arr_pegin_submit[del_id[i]].reg_date > 0) {
+        if (arr_pegin_submit[del_id[i]].state == Submit_state.submit) {
+          transfer(arr_pegin_submit[del_id[i]].user, (arr_pegin_submit[del_id[i]].amount + arr_pegin_submit[del_id[i]].fee));
+          _locked_POC_total -= (arr_pegin_submit[del_id[i]].amount + arr_pegin_submit[del_id[i]].fee);
+          arr_pegin_submit[del_id[i]].state = Submit_state.cancel;
+        }
       }
     }
     emit evt_pegin_submit_cancel(false);
-  }
-  
-  function remove_arr_pegin_submit(uint256 index) private {
-    delete arr_pegin_submit[index];
-    if (index >= arr_pegin_submit.length) return;
-    for (uint256 i = index; i<arr_pegin_submit.length-1; i++){
-      arr_pegin_submit[i] = arr_pegin_submit[i+1];
-    }
-    arr_pegin_submit.pop();
   }
   
   
@@ -337,57 +390,60 @@ contract ERC20POC is ERC20 {
     require(len == user.length, "3rd parameter is missed");
     require(len == amount.length, "4th parameter is missed");
     (, uint256 quota) = staff_check(msg.sender);
-    bool is_exist;
     uint256 total_amount = 0;
     for (uint256 i=0; i<len; i++) {
-      is_exist = false;
-      for (uint256 j=0; j<arr_pegout_reserve.length; j++) {
-        if (arr_pegout_reserve[j].id == id[i]) {
-          is_exist = true;
-          break;
-        }
-      }
-      require(!is_exist, "it's already reserved");
+      require(arr_pegout_reserve[id[i]].reg_date == 0, "there is an already reserved data");
       total_amount += amount[i];
     }
-    require(quota >= total_amount, "your locked_POC balance is not enough");
+    require(quota >= total_amount, "your unlocked_POC balance is not enough");
     for (uint256 i=0; i<len; i++) {
       increaseAllowance(user[i], amount[i]);
-      arr_pegout_reserve.push(pegout_data(reg_date[i], id[i], user[i], amount[i], msg.sender, false));
+      arr_pegout_reserve[id[i]] = pegout_data(reg_date[i], id[i], user[i], amount[i], msg.sender, Reserve_state.reserve);
+      arr_pegout_reserve_key_last += 1;
+      arr_pegout_reserve_key[arr_pegout_reserve_key_last] = id[i];
     }
     emit evt_pegout_reserve(true);
   }
-  
-  event evt_pegout_reserve_cancel(bool result);
-  function pegout_reserve_cancel(bytes32 del_id) onlyStaff external {
-    for (uint256 i=0; i<arr_pegout_reserve.length; i++) {
-      if ( (arr_pegout_reserve[i].id == del_id) && (arr_pegout_reserve[i].staff == msg.sender) ) {
-        decreaseAllowance(arr_pegout_reserve[i].user, arr_pegout_reserve[i].amount);
-        remove_arr_pegout_reserve(i);
-        emit evt_pegout_reserve_cancel(true);
+    
+  function pegout_reserve_list(uint256 count_per_page, uint256 current_page) external view returns (pegout_data[] memory) {
+    uint256 new_arr_pegout_reserve_key_last;
+    uint256 new_arr_pegout_reserve_key_start;
+    if (current_page == 0) { 
+      current_page = 1;
+    }
+    if (current_page == 1) {
+      new_arr_pegout_reserve_key_last = arr_pegout_reserve_key_last;
+    }
+    else
+    {
+      uint256 key_position = count_per_page * (current_page - 1);
+      if (arr_pegout_reserve_key_last <= key_position) {
+        new_arr_pegout_reserve_key_last = 0;
+      }
+      else {
+        new_arr_pegout_reserve_key_last = arr_pegout_reserve_key_last - key_position;
       }
     }
-    emit evt_pegout_reserve_cancel(false);
-  }  
-  
-  function pegout_reserve_list() external view returns (pegout_data[] memory) {
-    return arr_pegout_reserve;
-  }
-  
-  function pegout_reserve_list(address user) external view returns (pegout_data[] memory) {
-    uint256 count = 0;
-    for (uint256 i=0; i<arr_pegout_reserve.length; i++) {
-      if ( (arr_pegout_reserve[i].user == user) && (!arr_pegout_reserve[i].deleted) ) {
-          count += 1;
+    if (new_arr_pegout_reserve_key_last < count_per_page) {
+      new_arr_pegout_reserve_key_start = arr_pegout_reserve_key_start;
+    }
+    else {
+      if ( new_arr_pegout_reserve_key_last < (arr_pegout_reserve_key_start + count_per_page) ) {
+        new_arr_pegout_reserve_key_start = arr_pegout_reserve_key_start;
+      }
+      else {
+        new_arr_pegout_reserve_key_start = new_arr_pegout_reserve_key_last - count_per_page + 1;
       }
     }
-    pegout_data[] memory arr_temp = new pegout_data[](count);
-    uint256 temp_index = 0;
-    for (uint256 i=0; i<arr_pegout_reserve.length; i++) {
-      if ( (arr_pegout_reserve[i].user == user) && (!arr_pegout_reserve[i].deleted) ) {
-        arr_temp[temp_index] = arr_pegout_reserve[i];
-        temp_index += 1;
-      }
+    uint256 temp_size = 0;
+    if (new_arr_pegout_reserve_key_start < (new_arr_pegout_reserve_key_last + 1) ) {
+      temp_size = new_arr_pegout_reserve_key_last - new_arr_pegout_reserve_key_start + 1;
+    }
+    pegout_data[] memory arr_temp = new pegout_data[](temp_size);
+    uint256 index = 0;
+    for (uint256 i=new_arr_pegout_reserve_key_last; i>=new_arr_pegout_reserve_key_start; i--) {
+      arr_temp[index] = arr_pegout_reserve[arr_pegout_reserve_key[i]];
+      index += 1;
     }
     return arr_temp;
   }
@@ -398,27 +454,33 @@ contract ERC20POC is ERC20 {
     bytes32[] memory arr_temp = new bytes32[](len);
     uint256 temp_index = 0;
     for (uint256 i=0; i<len; i++) {
-      for (uint256 j=0; j<arr_pegout_reserve.length; j++) {
-        if ( (arr_pegout_reserve[j].id == id[i]) && (arr_pegout_reserve[j].user == msg.sender) && (!arr_pegout_reserve[j].deleted) ) {
-          bool result = transferFrom(arr_pegout_reserve[j].staff, msg.sender, arr_pegout_reserve[j].amount);
+      if (arr_pegout_reserve[id[i]].reg_date > 0) {
+        if ( (arr_pegout_reserve[id[i]].user == msg.sender) && (arr_pegout_reserve[id[i]].state == Reserve_state.reserve) ) {
+          bool result = transferFrom(arr_pegout_reserve[id[i]].staff, msg.sender, arr_pegout_reserve[id[i]].amount);
           if (result) {
-			arr_pegout_reserve[j].deleted = true;
-			_locked_POC_total -= arr_pegout_reserve[j].amount;
-			arr_temp[temp_index] = arr_pegout_reserve[i].id;
+            arr_pegout_reserve[id[i]].state = Reserve_state.complete;
+            _locked_POC_total += arr_pegout_reserve[id[i]].amount;
+			arr_temp[temp_index] = id[i];
 			temp_index += 1;
           }
+        
         }
       }
     }
     emit evt_pegout_run(arr_temp);
   }
   
-  function remove_arr_pegout_reserve(uint256 index) private {
-    delete arr_pegout_reserve[index];
-    if (index >= arr_pegout_reserve.length) return;
-    for (uint256 i = index; i<arr_pegout_reserve.length-1; i++){
-      arr_pegout_reserve[i] = arr_pegout_reserve[i+1];
+  event evt_pegout_reserve_cancel(bool result);
+  function pegout_reserve_cancel(bytes32[] memory del_id) onlyStaff external {
+    uint256 len = del_id.length;
+    for (uint256 i=0; i<len; i++) {
+      if (arr_pegout_reserve[del_id[i]].reg_date > 0) {
+        if (arr_pegout_reserve[del_id[i]].staff == msg.sender) {
+          decreaseAllowance(arr_pegout_reserve[del_id[i]].user, arr_pegout_reserve[del_id[i]].amount);
+          arr_pegout_reserve[del_id[i]].state = Reserve_state.cancel;
+        }
+      }
     }
-    arr_pegout_reserve.pop();
-  }  
+    emit evt_pegout_reserve_cancel(true);
+  } 
 }
