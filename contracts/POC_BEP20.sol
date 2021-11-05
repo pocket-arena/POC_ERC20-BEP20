@@ -17,7 +17,22 @@ contract BEP20POC is ERC20 {
     uint256 quota;
   }
   bridge_staff[] private arr_staff;
+    
+  enum Submit_state {submit, cancel, complete}
+  struct pegout_data {
+    uint256 reg_date;
+    bytes32 id;
+    address user;
+    uint256 amount;
+    uint256 fee;
+    Submit_state state;
+  }
+  mapping (bytes32 => pegout_data)  private arr_pegout_submit;
+  mapping (uint256 => bytes32) private arr_pegout_submit_key;
+  uint256 arr_pegout_submit_key_start = 1;
+  uint256 arr_pegout_submit_key_last = 0;
   
+  enum Reserve_state {reserve, cancel, complete}
   struct pegin_data {
     uint256 reg_date;
     bytes32 id;
@@ -25,21 +40,14 @@ contract BEP20POC is ERC20 {
     uint256 amount;
     uint256 fee;
     address staff;
-    bool deleted;
+    Reserve_state state;
   }
-  pegin_data[] private arr_pegin_reserve;
-  
-  struct pegout_data {
-    uint256 reg_date;
-    bytes32 id;
-    address user;
-    uint256 amount;
-    uint256 fee;
-    bool deleted;
-  }
-  pegout_data[] private arr_pegout_submit;
-  
-  constructor(uint256 fee_rate, uint256 unlocking_POC, address new_staff, uint256 new_staff_unlocked_POC, 
+  mapping (bytes32 => pegin_data) private arr_pegin_reserve;
+  mapping (uint256 => bytes32) private arr_pegin_reserve_key;
+  uint256 arr_pegin_reserve_key_start = 1;
+  uint256 arr_pegin_reserve_key_last = 0;
+
+  constructor(uint256 fee_rate, uint256 unlocking_POC, address new_staff, uint256 new_staff_unlocked_POC,
                 uint256 new_submit_daily_limit_total, uint256 new_submit_daily_limit_personal) ERC20("PocketArena", "POC") {
     _owner = msg.sender;
     _mint(_owner, (INIT_SUPPLY_POC * (10 ** uint256(decimals()))));
@@ -116,7 +124,8 @@ contract BEP20POC is ERC20 {
     return true;
   }
     
-  function staff_del() onlyStaff external returns (bool) {
+  event evt_staff_del(bool result);
+  function staff_del() onlyStaff external {
     uint256 del_index = arr_staff.length + 1;
     for (uint256 i=0; i<arr_staff.length; i++) {
       if (arr_staff[i].user == msg.sender) {
@@ -127,14 +136,14 @@ contract BEP20POC is ERC20 {
       }
     }
     if (del_index >= (arr_staff.length + 1)) {
-      return false;
+      emit evt_staff_del(false);
     }
     else {
       for (uint256 i=del_index; i<arr_staff.length-1; i++){
         arr_staff[i] = arr_staff[i+1];
       }
       arr_staff.pop();
-      return true;
+      emit evt_staff_del(true);
     }
   }
   
@@ -151,7 +160,8 @@ contract BEP20POC is ERC20 {
     return (is_staff, quota);
   }
   
-  function staff_quota_add(address staff, uint256 increased) onlyOwner external returns (bool) {
+  event evt_staff_quota_add(bool result);
+  function staff_quota_add(address staff, uint256 increased) onlyOwner external {
     (bool is_staff, ) = staff_check(staff);
     require(is_staff, "you can add quota for existed staff only");
     require(_unlocked_POC_total - staff_quota_total() > increased, "you can add within your unlocked_POC");
@@ -162,10 +172,11 @@ contract BEP20POC is ERC20 {
         break;
       }
     }
-    return true;
+    emit evt_staff_quota_add(true);
   }
   
-  function staff_quota_minus(uint256 decreased) onlyStaff external returns (bool) {
+  event evt_staff_quota_minus(bool result);
+  function staff_quota_minus(uint256 decreased) onlyStaff external {
     (, uint256 quota) = staff_check(msg.sender);
     require(quota >= decreased, "you can minus within your unlocked_POC");
     for (uint256 i=0; i<arr_staff.length; i++) {
@@ -175,7 +186,7 @@ contract BEP20POC is ERC20 {
         break;
       }
     }
-    return true;
+    emit evt_staff_quota_minus(true);
   }
   
   function staff_quota_total() onlyOwner public view returns (uint256) {
@@ -207,40 +218,76 @@ contract BEP20POC is ERC20 {
     return _fee_income;
   }
   
+  
+  
   function unlocked_POC_total() external view returns (uint256) {
     return _unlocked_POC_total;
   }
   
-  function unlocked_POC_total_add(uint256 amount) onlyOwner external returns (uint256) {
+  event evt_unlocked_POC_total_add(uint256 _unlocked_POC_total);
+  function unlocked_POC_total_add(uint256 amount) onlyOwner external {
     require((balanceOf(_owner) - _unlocked_POC_total) >= amount, "unlockable POC is not enough");
     _unlocked_POC_total += amount;
-    return _unlocked_POC_total;
+    emit evt_unlocked_POC_total_add(_unlocked_POC_total);
   }
   
-  function unlocked_POC_total_minus(uint256 amount) onlyOwner external returns (uint256) {
-      require((_unlocked_POC_total - staff_quota_total()) >= amount, "unlockable POC is not enough");
-      _unlocked_POC_total -= amount;
-      return _unlocked_POC_total;
+  event evt_unlocked_POC_total_minus(uint256 _unlocked_POC_total);
+  function unlocked_POC_total_minus(uint256 amount) onlyOwner external  {
+    require((_unlocked_POC_total - staff_quota_total()) >= amount, "unlockable POC is not enough");
+    _unlocked_POC_total -= amount;
+    emit evt_unlocked_POC_total_add(_unlocked_POC_total);
   }
+  
+  
   
   function _submit_daily_limit_total_get() onlyOwner external view returns (uint256) {
-      return _submit_daily_limit_total;
+    return _submit_daily_limit_total;
   }
   
   event evt_submit_daily_limit_total_set(uint256 _submit_daily_limit_total);
   function _submit_daily_limit_total_set(uint256 new_submit_daily_limit_total) onlyOwner external {
-      _submit_daily_limit_total = new_submit_daily_limit_total;
-      emit evt_submit_daily_limit_total_set(_submit_daily_limit_total);
+    _submit_daily_limit_total = new_submit_daily_limit_total;
+    emit evt_submit_daily_limit_total_set(_submit_daily_limit_total);
   }
   
   function _submit_daily_limit_personal_get() onlyOwner external view returns (uint256) {
-      return _submit_daily_limit_personal;
+    return _submit_daily_limit_personal;
   }
   
   event evt_submit_daily_limit_personal_set(uint256 _submit_daily_limit_personal);
   function _submit_daily_limit_personal_set(uint256 new_submit_daily_limit_personal) onlyOwner external {
-      _submit_daily_limit_personal = new_submit_daily_limit_personal;
-      emit evt_submit_daily_limit_personal_set(_submit_daily_limit_personal);
+    _submit_daily_limit_personal = new_submit_daily_limit_personal;
+    emit evt_submit_daily_limit_personal_set(_submit_daily_limit_personal);
+  }
+  
+  
+  
+  function arr_pegout_submit_key_last_get() onlyOwner external view returns (uint256) {
+    return arr_pegout_submit_key_last;
+  }
+  
+  function arr_pegout_submit_key_start_get() onlyOwner external view returns (uint256) {
+    return arr_pegout_submit_key_start;
+  }
+  
+  event evt_arr_pegout_submit_key_start_set(uint256 arr_pegout_submit_key_start);
+  function arr_pegout_submit_key_start_set(uint256 new_arr_pegout_submit_key_start) onlyOwner external {
+    arr_pegout_submit_key_start = new_arr_pegout_submit_key_start;
+    emit evt_arr_pegout_submit_key_start_set(arr_pegout_submit_key_start);
+  }
+  
+  function arr_pegin_reserve_key_last_get() onlyOwner external view returns (uint256) {
+    return arr_pegin_reserve_key_last;
+  }
+  
+  function arr_pegin_reserve_key_start_get() onlyOwner external view returns (uint256) {
+    return arr_pegin_reserve_key_start;
+  }
+  
+  event evt_arr_pegin_reserve_key_start_set(uint256 arr_pegin_reserve_ey_start);
+  function arr_pegin_reserve_key_start_set(uint256 new_arr_pegin_reserve_key_start) onlyOwner external {
+    arr_pegin_reserve_key_start = new_arr_pegin_reserve_key_start;
+    emit evt_arr_pegin_reserve_key_start_set(arr_pegin_reserve_key_start);
   }
   
   
@@ -251,14 +298,13 @@ contract BEP20POC is ERC20 {
     require(balanceOf(msg.sender) >= (amount + calc_fee), "your balance is not enough");
     uint256 daily_total = 0;
     uint256 daily_personal = 0;
-    uint256 len = arr_pegout_submit.length;
-    for (uint256 i=(len-1); i>=0; i--) {
-      if ((block.timestamp - arr_pegout_submit[i].reg_date) < 86400) {
+    for (uint256 i=arr_pegout_submit_key_last; i>=arr_pegout_submit_key_start; i--) {
+      if ((block.timestamp - arr_pegout_submit[arr_pegout_submit_key[i]].reg_date) < 86400) {
         daily_total += 1;
-        require(daily_total <= _submit_daily_limit_total, "we dont't get the submit anymore today");
-        if (arr_pegout_submit[i].user == msg.sender) {
+        require(daily_total < _submit_daily_limit_total, "we dont't get the submit anymore today");
+        if (arr_pegout_submit[arr_pegout_submit_key[i]].user == msg.sender) {
           daily_personal += 1;
-          require(daily_personal <= _submit_daily_limit_personal, "you can't submit anymore today");
+          require(daily_personal < _submit_daily_limit_personal, "you can't submit anymore today");
         }
       }
       else {
@@ -268,73 +314,82 @@ contract BEP20POC is ERC20 {
     transfer(_owner, (amount + calc_fee));
     _unlocked_POC_total += amount;
     _fee_income += calc_fee;
-    pegout_data memory temp = pegout_data(block.timestamp, keccak256(abi.encodePacked(block.timestamp)), msg.sender, amount, calc_fee, false);
-    arr_pegout_submit.push(temp);
+    bytes32 temp_key = keccak256(abi.encodePacked(block.timestamp));
+    pegout_data memory temp = pegout_data(block.timestamp, temp_key, msg.sender, amount, calc_fee, Submit_state.submit);
+    arr_pegout_submit[temp_key] = temp;
+    arr_pegout_submit_key_last += 1;
+    arr_pegout_submit_key[arr_pegout_submit_key_last] = temp_key;
     emit evt_pegout_submit(temp);
   }
   
-  function pegout_submit_list() external view returns (pegout_data[] memory) {
-    return arr_pegout_submit;
+  function pegout_submit_list(uint256 count_per_page, uint256 current_page) external view returns (pegout_data[] memory) {
+    uint256 new_arr_pegout_submit_key_last;
+    uint256 new_arr_pegout_submit_key_start;
+    if (current_page == 0) { 
+      current_page = 1;
+    }
+    if (current_page == 1) {
+      new_arr_pegout_submit_key_last = arr_pegout_submit_key_last;
+    }
+    else
+    {
+      uint256 key_position = count_per_page * (current_page - 1);
+      if (arr_pegout_submit_key_last <= key_position) {
+        new_arr_pegout_submit_key_last = 0;
+      }
+      else {
+        new_arr_pegout_submit_key_last = arr_pegout_submit_key_last - key_position;
+      }
+    }
+    if (new_arr_pegout_submit_key_last < count_per_page) {
+      new_arr_pegout_submit_key_start = arr_pegout_submit_key_start;
+    }
+    else {
+      if ( new_arr_pegout_submit_key_last < (arr_pegout_submit_key_start + count_per_page) ) {
+        new_arr_pegout_submit_key_start = arr_pegout_submit_key_start;
+      }
+      else {
+        new_arr_pegout_submit_key_start = new_arr_pegout_submit_key_last - count_per_page + 1;
+      }
+    }
+    uint256 temp_size = 0;
+    if (new_arr_pegout_submit_key_start < (new_arr_pegout_submit_key_last + 1) ) {
+      temp_size = new_arr_pegout_submit_key_last - new_arr_pegout_submit_key_start + 1;
+    }
+    pegout_data[] memory arr_temp = new pegout_data[](temp_size);
+    uint256 index = 0;
+    for (uint256 i=new_arr_pegout_submit_key_last; i>=new_arr_pegout_submit_key_start; i--) {
+      arr_temp[index] = arr_pegout_submit[arr_pegout_submit_key[i]];
+      index += 1;
+    }
+    return arr_temp;
   }
   
-  event evt_pegout_submit_complete(bytes32[] arr_temp);
+  event evt_pegout_submit_complete(bool result);
   function pegout_submit_complete(bytes32[] memory complete_id) onlyStaff external {
     uint256 len = complete_id.length;
-    bytes32[] memory arr_temp = new bytes32[](len);
-    uint256 temp_index = 0;
     for (uint256 i=0; i<len; i++) {
-      for (uint256 j=0; j<arr_pegout_submit.length; j++) {
-        if (arr_pegout_submit[j].id == complete_id[i]) {
-          arr_pegout_submit[j].deleted = true;
-          arr_temp[temp_index] = complete_id[i];
-          temp_index += 1;
-          break;
-        }
+      if (arr_pegout_submit[complete_id[i]].reg_date > 0) {
+        arr_pegout_submit[complete_id[i]].state = Submit_state.complete;
       }
     }
-    emit evt_pegout_submit_complete(arr_temp);
-  }
-  
-  event evt_pegout_submit_delete(bytes32[] arr_temp);
-  function pegout_submit_delete(bytes32[] memory del_id) onlyStaff external {
-    uint256 len = del_id.length;
-    bytes32[] memory arr_temp = new bytes32[](len);
-    uint256 temp_index = 0;
-    for (uint256 i=0; i<len; i++) {
-      for (uint256 j=0; j<arr_pegout_submit.length; j++) {
-        if (arr_pegout_submit[j].id == del_id[i]) {
-          remove_arr_pegout_submit(j);
-          arr_temp[temp_index] = del_id[i];
-          temp_index += 1;
-          break;
-        }
-      }
-    }
-    emit evt_pegout_submit_delete(arr_temp);
+    emit evt_pegout_submit_complete(true);
   }
   
   event evt_pegout_submit_cancel(bool result);
-  function pegout_submit_cancel(bytes32 del_id) onlyOwner external {
-    for (uint256 j=0; j<arr_pegout_submit.length; j++) {
-      if (arr_pegout_submit[j].id == del_id) {
-        transfer(arr_pegout_submit[j].user, (arr_pegout_submit[j].amount + arr_pegout_submit[j].fee));
-        _unlocked_POC_total -= arr_pegout_submit[j].amount;
-        _fee_income -= arr_pegout_submit[j].fee;
-        remove_arr_pegout_submit(j);
-        emit evt_pegout_submit_cancel(true);
-        break;
+  function pegout_submit_cancel(bytes32[] memory del_id) onlyStaff external {
+    uint256 len = del_id.length;
+    for (uint256 i=0; i<len; i++) {
+      if (arr_pegout_submit[del_id[i]].reg_date > 0) {
+        if (arr_pegout_submit[del_id[i]].state == Submit_state.submit) {
+          transfer(arr_pegout_submit[del_id[i]].user, (arr_pegout_submit[del_id[i]].amount + arr_pegout_submit[del_id[i]].fee));
+          _unlocked_POC_total -= arr_pegout_submit[del_id[i]].amount;
+          _fee_income -= arr_pegout_submit[del_id[i]].fee;
+          arr_pegout_submit[del_id[i]].state = Submit_state.cancel;
+        }
       }
     }
     emit evt_pegout_submit_cancel(false);
-  }
-  
-  function remove_arr_pegout_submit(uint256 index) private {
-    delete arr_pegout_submit[index];
-    if (index >= arr_pegout_submit.length) return;
-    for (uint256 i = index; i<arr_pegout_submit.length-1; i++){
-      arr_pegout_submit[i] = arr_pegout_submit[i+1];
-    }
-    arr_pegout_submit.pop();
   }
 
   
@@ -347,60 +402,63 @@ contract BEP20POC is ERC20 {
     require(len == amount.length, "4th parameter is missed");
     require(len == fee.length, "5th parameter is missed");
     (, uint256 quota) = staff_check(msg.sender);
-    bool is_exist;
     uint256 total_amount = 0;
     for (uint256 i=0; i<len; i++) {
-      is_exist = false;
-      for (uint256 j=0; j<arr_pegin_reserve.length; j++) {
-        if (arr_pegin_reserve[j].id == id[i]) {
-          is_exist = true;
-          break;
-        }
-      }
-      require(!is_exist, "it's already reserved");
+      require(arr_pegin_reserve[id[i]].reg_date == 0, "there is an already reserved data");
       total_amount += amount[i];
     }
     require(quota >= total_amount, "your unlocked_POC balance is not enough");
     for (uint256 i=0; i<len; i++) {
       increaseAllowance(user[i], amount[i]);
-      arr_pegin_reserve.push(pegin_data(reg_date[i], id[i], user[i], amount[i], fee[i], msg.sender, false));
+      arr_pegin_reserve[id[i]] = pegin_data(reg_date[i], id[i], user[i], amount[i], fee[i], msg.sender, Reserve_state.reserve);
+      arr_pegin_reserve_key_last += 1;
+      arr_pegin_reserve_key[arr_pegin_reserve_key_last] = id[i];
     }
     emit evt_pegin_reserve(true);
   }
   
-  event evt_pegin_reserve_cancel(bool result);
-  function pegin_reserve_cancel(bytes32 del_id) onlyStaff external {
-    for (uint256 i=0; i<arr_pegin_reserve.length; i++) {
-      if ( (arr_pegin_reserve[i].id == del_id) && (arr_pegin_reserve[i].staff == msg.sender) ) {
-        decreaseAllowance(arr_pegin_reserve[i].user, arr_pegin_reserve[i].amount);
-        remove_arr_pegin_reserve(i);
-        emit evt_pegin_reserve_cancel(true);
+  function pegin_reserve_list(uint256 count_per_page, uint256 current_page) external view returns (pegin_data[] memory) {
+    uint256 new_arr_pegin_reserve_key_last;
+    uint256 new_arr_pegin_reserve_key_start;
+    if (current_page == 0) { 
+      current_page = 1;
+    }
+    if (current_page == 1) {
+      new_arr_pegin_reserve_key_last = arr_pegin_reserve_key_last;
+    }
+    else
+    {
+      uint256 key_position = count_per_page * (current_page - 1);
+      if (arr_pegin_reserve_key_last <= key_position) {
+        new_arr_pegin_reserve_key_last = 0;
+      }
+      else {
+        new_arr_pegin_reserve_key_last = arr_pegin_reserve_key_last - key_position;
       }
     }
-    emit evt_pegin_reserve_cancel(false);
-  }
-  
-  function pegin_reserve_list() external view returns (pegin_data[] memory) {
-    return arr_pegin_reserve;
-  }
-  
-  function pegin_reserve_list(address user) external view returns (pegin_data[] memory) {
-    uint256 count = 0;
-    for (uint256 i=0; i<arr_pegin_reserve.length; i++) {
-      if ( (arr_pegin_reserve[i].user == user) && (!arr_pegin_reserve[i].deleted) ) {
-          count += 1;
+    if (new_arr_pegin_reserve_key_last < count_per_page) {
+      new_arr_pegin_reserve_key_start = arr_pegin_reserve_key_start;
+    }
+    else {
+      if ( new_arr_pegin_reserve_key_last < (arr_pegin_reserve_key_start + count_per_page) ) {
+        new_arr_pegin_reserve_key_start = arr_pegin_reserve_key_start;
+      }
+      else {
+        new_arr_pegin_reserve_key_start = new_arr_pegin_reserve_key_last - count_per_page + 1;
       }
     }
-    pegin_data[] memory arr_temp = new pegin_data[](count);
-    uint256 temp_index = 0;
-    for (uint256 i=0; i<arr_pegin_reserve.length; i++) {
-      if ( (arr_pegin_reserve[i].user == user) && (!arr_pegin_reserve[i].deleted) ) {
-        arr_temp[temp_index] = arr_pegin_reserve[i];
-        temp_index += 1;
-      }
+    uint256 temp_size = 0;
+    if (new_arr_pegin_reserve_key_start < (new_arr_pegin_reserve_key_last + 1) ) {
+      temp_size = new_arr_pegin_reserve_key_last - new_arr_pegin_reserve_key_start + 1;
+    }
+    pegin_data[] memory arr_temp = new pegin_data[](temp_size);
+    uint256 index = 0;
+    for (uint256 i=new_arr_pegin_reserve_key_last; i>=new_arr_pegin_reserve_key_start; i--) {
+      arr_temp[index] = arr_pegin_reserve[arr_pegin_reserve_key[i]];
+      index += 1;
     }
     return arr_temp;
-  }  
+  }
   
   event evt_pegin_run(bytes32[] arr_temp);
   function pegin_run(bytes32[] memory id) external {
@@ -408,28 +466,34 @@ contract BEP20POC is ERC20 {
     bytes32[] memory arr_temp = new bytes32[](len);
     uint256 temp_index = 0;
     for (uint256 i=0; i<len; i++) {
-      for (uint256 j=0; j<arr_pegin_reserve.length; j++) {
-        if ( (arr_pegin_reserve[j].id == id[i]) && (arr_pegin_reserve[j].user == msg.sender) && (!arr_pegin_reserve[j].deleted) ) {
-          bool result = transferFrom(arr_pegin_reserve[j].staff, msg.sender, arr_pegin_reserve[j].amount);
+      if (arr_pegin_reserve[id[i]].reg_date > 0) {
+        if ( (arr_pegin_reserve[id[i]].user == msg.sender) && (arr_pegin_reserve[id[i]].state == Reserve_state.reserve) ) {
+          bool result = transferFrom(arr_pegin_reserve[id[i]].staff, msg.sender, arr_pegin_reserve[id[i]].amount);
           if (result) {
-            arr_pegin_reserve[j].deleted = true;
-            _unlocked_POC_total += arr_pegin_reserve[j].amount;
-            _fee_income += arr_pegin_reserve[j].fee;
-			arr_temp[temp_index] = arr_pegin_reserve[i].id;
+            arr_pegin_reserve[id[i]].state = Reserve_state.complete;
+            _unlocked_POC_total += arr_pegin_reserve[id[i]].amount;
+            _fee_income += arr_pegin_reserve[id[i]].fee;
+			arr_temp[temp_index] = id[i];
 			temp_index += 1;
           }
+        
         }
       }
     }
     emit evt_pegin_run(arr_temp);
   }
   
-  function remove_arr_pegin_reserve(uint256 index) private {
-    delete arr_pegin_reserve[index];
-    if (index >= arr_pegin_reserve.length) return;
-    for (uint256 i = index; i<arr_pegin_reserve.length-1; i++){
-      arr_pegin_reserve[i] = arr_pegin_reserve[i+1];
+  event evt_pegin_reserve_cancel(bool result);
+  function pegin_reserve_cancel(bytes32[] memory del_id) onlyStaff external {
+    uint256 len = del_id.length;
+    for (uint256 i=0; i<len; i++) {
+      if (arr_pegin_reserve[del_id[i]].reg_date > 0) {
+        if (arr_pegin_reserve[del_id[i]].staff == msg.sender) {
+          decreaseAllowance(arr_pegin_reserve[del_id[i]].user, arr_pegin_reserve[del_id[i]].amount);
+          arr_pegin_reserve[del_id[i]].state = Reserve_state.cancel;
+        }
+      }
     }
-    arr_pegin_reserve.pop();
-  }  
+    emit evt_pegin_reserve_cancel(true);
+  }
 }
