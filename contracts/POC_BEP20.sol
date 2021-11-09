@@ -118,7 +118,7 @@ contract BEP20POC is ERC20 {
     require(arr_staff.length < 5, "it allows max 5 staffs only");
     require(new_staff != _owner, "owner can't be staff");
     (bool is_staff, ) = staff_check(new_staff);
-    require(is_staff != true, "it's already added as staff");
+    require(!is_staff, "it's already added as staff");
     transfer(new_staff, new_staff_unlocked_POC);
     arr_staff.push(bridge_staff(new_staff, new_staff_unlocked_POC));
     return true;
@@ -314,7 +314,7 @@ contract BEP20POC is ERC20 {
     transfer(_owner, (amount + calc_fee));
     _unlocked_POC_total += amount;
     _fee_income += calc_fee;
-    bytes32 temp_key = keccak256(abi.encodePacked(block.timestamp));
+    bytes32 temp_key = keccak256(abi.encodePacked(block.timestamp, msg.sender));
     pegout_data memory temp = pegout_data(block.timestamp, temp_key, msg.sender, amount, calc_fee, Submit_state.submit);
     arr_pegout_submit[temp_key] = temp;
     arr_pegout_submit_key_last += 1;
