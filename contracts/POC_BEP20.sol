@@ -312,7 +312,7 @@ contract BEP20POC is ERC20 {
       }
     }
     transfer(_owner, (amount + calc_fee));
-    _unlocked_POC_total += amount;
+    _unlocked_POC_total -= amount;
     _fee_income += calc_fee;
     bytes32 temp_key = keccak256(abi.encodePacked(block.timestamp, msg.sender));
     pegout_data memory temp = pegout_data(block.timestamp, temp_key, msg.sender, amount, calc_fee, Submit_state.submit);
@@ -471,7 +471,7 @@ contract BEP20POC is ERC20 {
           bool result = transferFrom(arr_pegin_reserve[id[i]].staff, msg.sender, arr_pegin_reserve[id[i]].amount);
           if (result) {
             arr_pegin_reserve[id[i]].state = Reserve_state.complete;
-            _unlocked_POC_total += arr_pegin_reserve[id[i]].amount;
+            _unlocked_POC_total += (arr_pegin_reserve[id[i]].amount + arr_pegin_reserve[id[i]].fee);
             _fee_income += arr_pegin_reserve[id[i]].fee;
 			arr_temp[temp_index] = id[i];
 			temp_index += 1;
