@@ -459,7 +459,7 @@ contract ERC20POC is ERC20 {
           bool result = transferFrom(arr_pegout_reserve[id[i]].staff, msg.sender, arr_pegout_reserve[id[i]].amount);
           if (result) {
             arr_pegout_reserve[id[i]].state = Reserve_state.complete;
-            _locked_POC_total += arr_pegout_reserve[id[i]].amount;
+            _locked_POC_total -= arr_pegout_reserve[id[i]].amount;
 			arr_temp[temp_index] = id[i];
 			temp_index += 1;
           }
