@@ -311,6 +311,10 @@ contract ERC20POC is ERC20 {
     arr_pegin_submit_key[arr_pegin_submit_key_last] = temp_key;
     emit evt_pegin_submit(temp);
   }
+    
+  function pegin_submit_list(bytes32 id) external view returns (pegin_data memory) {
+      return arr_pegin_submit[id];
+  }  
   
   function pegin_submit_list(uint256 count_per_page, uint256 current_page) external view returns (pegin_data[] memory) {
     uint256 new_arr_pegin_submit_key_last;
@@ -403,6 +407,10 @@ contract ERC20POC is ERC20 {
       arr_pegout_reserve_key[arr_pegout_reserve_key_last] = id[i];
     }
     emit evt_pegout_reserve(true);
+  }
+  
+  function pegout_reserve_list(bytes32 id) external view returns (pegout_data memory) {
+      return arr_pegout_reserve[id];
   }
     
   function pegout_reserve_list(uint256 count_per_page, uint256 current_page) external view returns (pegout_data[] memory) {
